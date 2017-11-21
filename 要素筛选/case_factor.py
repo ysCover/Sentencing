@@ -10,32 +10,57 @@ sys.setdefaultencoding('utf8')
 import pymysql
 import urllib2
 import jieba.posseg
+import pymongo
+import requests
 
-folder = '/home/tc/Desktop/test/'
+folder = '/home/tc/Desktop/机器学习项目组/project_submit/Sentencing/案件删选/三到七年有期徒刑/'
 files = os.listdir(folder)
 
 for file in files: 
-
-	# print folder + file
+	data = {}
 	f = open(folder + file)
 	text = xmltodict.parse(f.read().encode('utf-8'))
 	s = json.loads(json.dumps(text))
 	rt = s['writ']['QW']
 
-	court = rt['WS']['JBFY']['BZFYMC']['@value'].encode('utf-8')
-	Litigant = rt['PJJG']['XSPJJGFZ']['SSCYR']['@value'].encode('utf-8')
+	# court = rt['WS']['JBFY']['BZFYMC']['@value'].encode('utf-8')
+	# Litigant = rt['PJJG']['XSPJJGFZ']['SSCYR']['@value'].encode('utf-8')
 
 	#案件情况描述
-	Situation = rt['AJJBQK']['@value'].encode('utf-8')
-
+	try:
+		Situation = rt['AJJBQK']['@value']
+	except:
+		continue
+	reason = ""
+	result = ""
+	length = len(Situation)
+	s1 = s2 = False
+	for i in range(length):
+		if Situation[i] == '被' and Situation[i+1] == '告' and Situation[i+2] == '人' :
+			s1 = True
+		if Situation[i] == '，' and (Situation[i+1] == '致' or Situation[i+1] == '造' and Situation[i+2] == '成'):
+			s1 = False
+		if i > 0 and Situation[i-1] == '，' and (Situation[i] == '致' or Situation[i] == '造' and Situation[i+1] == '成'):
+			s2 = True
+		if s1 == True:
+			reason += Situation[i] 
+		if s2 == True:
+			result += Situation[i] 
+		if Situation[i] == '。':
+			break
+	# print "reason: " + reason 
+	# print "reason: " + result 
 	#裁判分析过程(违规行为)
 
-	CPFXGC = rt['CPFXGC']['@value']
+	try:
+		CPFXGC = rt['CPFXGC']['@value']
+	except:
+		continue
 	illegal_description = ""
 	for i in CPFXGC:
 		illegal_description += i
 		if i == '。':
-			print illegal_description
+			# print illegal_description
 			break
 	length = len(CPFXGC)
 	jjpc = False
@@ -236,41 +261,52 @@ for file in files:
 		if word.find('车') != -1 and flag == 'n':
 			car = word
 			break
-	# print "肇事车型:     " + car
+	
+# 获取的案件信息都不涉及少年法庭
+# 14岁到16岁之间犯罪 
+	# print "是否14岁到16岁之间犯罪: 否"
+	data['是否14岁到16岁之间犯罪'] = "否"
+# 16岁到18岁之间犯罪 
+	# print "是否16岁到18岁之间犯罪: 否"
+	data['是否16岁到18岁之间犯罪'] = "否"
+# 事发原因
+	# print "事发原因: " + reason 
+	data['事发原因'] = reason
+# 财产损失 
+	# print "财产损失: " + result 
+	data['财产损失'] = result
 # 违规行为
-	print "违规情况: ", 
+	item = []
+	# print "违规情况: ", 
 	for i in range(0,len(illegal)):
-		print illegal[i] ,
-	print "\n"
-
-	# try:
-	# 	Victim = rt['AJJBQK']['BHR']
-	# 	print "受害人姓名:    " + Victim['BHRXM']['@value']
-	# except:
-	# 	print ""
-	# try:
-	# 	print "受害人是否死亡: 		" + Victim['SFSW']['@value']
-	# except:
-	# 	print ""
-
+		item.append(illegal[i])
+		# print illegal[i] ,
+	data['违规情况'] = item
 # 负何种责任
-	print "负何种责任: " + fzlx
+	# print "\n负何种责任: " + fzlx
+	data['负何种责任'] = fzlx
 
 # 死亡人数 
 	if ss1 == -1:
-		print "死亡人数: 多人"
+		# print "死亡人数: 多人"
+		data['死亡人数'] = "多人"
 	else:
-		print "死亡人数: ",ss1
+		# print "死亡人数: ",ss1
+		data['死亡人数'] = ss1
 # 重伤人数 
 	if ss2 == -1:
-		print "重伤人数: 多人"
+		# print "重伤人数: 多人"
+		data['重伤人数'] = "多人"
 	else:
-		print "重伤人数: ",ss2
+		# print "重伤人数: ",ss2
+		data['重伤人数'] = ss2
 # 轻伤人数 
 	if ss3 == -1:
-		print "轻伤人数: 多人"
+		# print "轻伤人数: 多人"
+		data['轻伤人数'] = "多人"
 	else:
-		print "轻伤人数: ",ss3
+		# print "轻伤人数: ",ss3
+		data['轻伤人数'] = ss3
 
 #量刑情节
 	# Sentencing = rt['CPFXGC']['LXQJ']
@@ -301,120 +337,131 @@ for file in files:
 				s5 = True
 			elif Sentencing[i]['QJ']['@value'] == "手段恶劣，动机卑劣":
 				s6 = True
-
 	except:
 		print ""
-
+# 是否有前科劣迹
+	qklj = "没有" 
+	try:
+		if rt['DSR']['YSF']['QKLJ'][0]['@nameCN'] == '前科劣迹' or rt['DSR']['YSF']['QKLJ']['@nameCN'] == '前科劣迹':
+			qklj = "有" 
+			# print "是否有前科劣迹: 有"
+		# else:
+			# print "是否有前科劣迹: 没有"
+	except:
+		qklj = "没有" 
+		# print "是否有前科劣迹: 没有"
+	data['是否有前科劣迹'] = qklj
 # 是否逃逸
 	if ty == True:
-		print "是否逃逸: 是"
+		# print "是否逃逸: 是"
+		data['是否逃逸'] = "是"
 	else:
-		print "是否逃逸: 否"
+		# print "是否逃逸: 否"
+		data['是否逃逸'] = "否"
 # 是否自首
 	if s1 == True:
-		print "是否自首: 是"
+		# print "是否自首: 是"
+		data['是否自首'] = "是"
 	else:
-		print "是否自首: 否"
+		# print "是否自首: 否"
+		data['是否自首'] = "否"
 # 是否积极赔偿
 	if jjpc == True:
-		print "是否积极赔偿: 是"
+		# print "是否积极赔偿: 是"
+		data['是否积极赔偿'] = "是"
 	else:
-		print "是否积极赔偿: 否"
+		# print "是否积极赔偿: 否"
+		data['是否积极赔偿'] = "否"
 # 犯罪后是否采取补救措施
 	if s2 == True:
-		print "犯罪后是否采取补救措施: 是"
+		# print "犯罪后是否采取补救措施: 是"
+		data['犯罪后是否采取补救措施'] = "是"
 	else:
-		print "犯罪后是否采取补救措施: 否"
+		# print "犯罪后是否采取补救措施: 否"
+		data['犯罪后是否采取补救措施'] = "否"
 # 主动取得被害人谅解
 	if s3 == True:
-		print "是否达成和解: 是"
+		# print "是否达成和解: 是"
+		data['是否达成和解'] = "是"
 	else:
-		print "是否达成和解: 否"
+		# print "是否达成和解: 否"
+		data['是否达成和解'] = "否"
 # 认罪态度
 	jbzz = False
 	if rt['CPFXGC']['BGRTYRZCX']['@value'] == '否':
 		jbzz = True
 	if jbzz == True:
-		print "认罪态度: 拒不认罪"
+		# print "认罪态度: 拒不认罪"
+		data['认罪态度'] = "拒不认罪"
 	elif s4 == True:
-		print "认罪态度: 良好"
+		# print "认罪态度: 良好"
+		data['认罪态度'] = "良好"
 	else:
-		print "认罪态度: 一般"
+		# print "认罪态度: 一般"
+		data['认罪态度'] = "一般"
 # 罪犯类型是否老年人、智障人、残疾人
 	if s4 == True:
-		print "罪犯类型是否老年人、智障人、残疾人: 是"
+		# print "罪犯类型是否老年人、智障人、残疾人: 是"
+		data['罪犯类型是否老年人、智障人、残疾人'] = "是"
 	else:
-		print "罪犯类型是否老年人、智障人、残疾人: 否"
+		# print "罪犯类型是否老年人、智障人、残疾人: 否"
+		data['罪犯类型是否老年人、智障人、残疾人'] = "否"
 
 # 是否手段恶劣，动机卑劣
 	if s6 == True:
-		print "是否手段恶劣，动机卑劣: 是"
+		# print "是否手段恶劣，动机卑劣: 是"
+		data['是否手段恶劣，动机卑劣'] = "是"
 	else:
-		print "是否手段恶劣，动机卑劣: 否"
+		# print "是否手段恶劣，动机卑劣: 否"
+		data['是否手段恶劣，动机卑劣'] = "否"
 
 
 #判决结果
 	Result = rt['PJJG']['XSPJJGFZ']['BSPJJG']['ZXPF']
+	zxxq = "null"
+	hxxq = "null"
 	try:
-		print "缓刑刑期:   " + Result['HX']['HXXQ']['@value']
+		zxxq = Result['HX']['HXXQ']['@value']
+		# print "缓刑刑期:   " + Result['HX']['HXXQ']['@value']
 	except:
-		print "缓刑刑期:   null "
+		zxxq = "null"
+		# print "缓刑刑期:   null "
 	try:
-		print "主刑刑期:   " + Result['ZX']['ZXXQ']['@value']
+		hxxq = Result['ZX']['ZXXQ']['@value']
+		# print "主刑刑期:   " + Result['ZX']['ZXXQ']['@value']
 	except:
-		print "主刑刑期:   null "
-	# print "判决结果类型: " + Result['PJJGLX']['@value']
-	# print "判决结果: 		" + Result['@value']
-	f.close()
+		hxxq = "null"
+		# print "主刑刑期:   null "
+	data['主刑刑期'] = zxxq
+	data['缓刑刑期'] = hxxq
+	# print data
 
 #法条
-	print "\n法条: "
+	ftitem = []
+	# print "\n法条: "
 	try:
 		rt = s['writ']['QW']['CPFXGC']['CUS_FLFT_FZ_RY']['CUS_FLFT_RY']
+		nums = len(rt)
+		flag = True
+		for x in rt:
+			if x == '@nameCN':
+				flag = False
+			else:
+				break
+		if flag == False:
+			print "\n"
+		else: 
+			a = [0 for x in range(0, nums)]
+			for i in range(0,nums):
+				a[i] = rt[i]['@value'].encode('utf-8')
+				ftitem.append(a[i])
+				
+		data['法条'] = ftitem
 	except:
-		continue
-	nums = len(rt)
-	flag = True
-	for x in rt:
-		if x == '@nameCN':
-			flag = False
-		else:
-			break
-	if flag == False:
-		print "\n"
-	else: 
-		a = [0 for x in range(0, nums)]
-		for i in range(0,nums):
-			a[i] = rt[i]['@value'].encode('utf-8')
-			print a[i]
-		print "\n"
+		data['法条'] = []
+	client =  pymongo.MongoClient('localhost',27017)
+	db = client['Sentencing']
+	collection = db['factor3_7']
+	collection = collection.insert(data)
+	f.close()
 
-# 是否逃逸 y
-# 是否自首 y
-# 是否吸食毒品
-# 是否积极赔偿 y
-# 是否有能力赔偿
-# 是否累犯
-# 是否达成和解 y
-# 死亡人数 y
-# 重伤人数 y
-# 轻伤人数 y
-# 事故处理态度
-# 负何种责任 y
-# 认罪态度 y
-# 社会危害程度 
-# 法条 y
-# 判决结果 y
-# 14岁到16岁之间犯罪
-# 16岁到18岁之间犯罪
-# 被害人为未成年人老人残疾人孕妇等
-# 有前科劣迹
-# 犯罪后是否采取补救措施 y
-
-# 事发原因 
-# 违规行为 y
-# 受害人经济损失
-# 公共财产损失
-
-# 罪犯类型是否老年人、智障人、残疾人 y
-# 是否手段恶劣，动机卑劣 y
